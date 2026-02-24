@@ -83,6 +83,7 @@ async function syncGroups(projectRoot: string): Promise<void> {
   // Run inline sync script via node
   logger.info('Fetching group metadata');
   let syncOk = false;
+  const tmpScript = path.join(projectRoot, 'store', '.sync-groups-tmp.mjs');
   try {
     const syncScript = `
 import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } from '@whiskeysockets/baileys';
@@ -153,7 +154,8 @@ sock.ev.on('connection.update', async (update) => {
 });
 `;
 
-    const output = execSync(`node --input-type=module -e ${JSON.stringify(syncScript)}`, {
+    fs.writeFileSync(tmpScript, syncScript);
+    const output = execSync(`node ${tmpScript}`, {
       cwd: projectRoot,
       encoding: 'utf-8',
       timeout: 45000,
@@ -163,6 +165,8 @@ sock.ev.on('connection.update', async (update) => {
     logger.info({ output: output.trim() }, 'Sync output');
   } catch (err) {
     logger.error({ err }, 'Sync failed');
+  } finally {
+    try { fs.unlinkSync(tmpScript); } catch { /* ignore */ }
   }
 
   // Count groups in DB using better-sqlite3 (no sqlite3 CLI)
