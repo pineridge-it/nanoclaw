@@ -175,7 +175,7 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['ABACUS_AI_API_KEY']);
+  return readEnvFile(['ABACUS_AI_API_KEY', 'BRAVE_API_KEY']);
 }
 
 function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {

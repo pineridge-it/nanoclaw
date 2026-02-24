@@ -471,6 +471,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (containerInput.secrets?.['BRAVE_API_KEY']) {
+    process.env.BRAVE_API_KEY = containerInput.secrets['BRAVE_API_KEY'];
+  }
+
   const client = new OpenAI({
     baseURL: ROUTELLM_BASE_URL,
     apiKey,

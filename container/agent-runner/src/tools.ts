@@ -104,10 +104,22 @@ async function executeGlob(args: { pattern: string; path?: string }): Promise<st
 }
 
 async function executeWebSearch(args: { query: string }): Promise<string> {
-  const cmd = `curl -sS 'https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(args.query)}' -H 'User-Agent: Mozilla/5.0' | sed -n 's/<[^>]*>//gp' | head -100`;
+  const braveKey = process.env.BRAVE_API_KEY;
+  if (!braveKey) return 'BRAVE_API_KEY not configured.';
+  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(args.query)}&count=10`;
+  const cmd = `curl -sS '${url}' -H 'Accept: application/json' -H 'Accept-Encoding: gzip' -H 'X-Subscription-Token: ${braveKey}' --compressed`;
   const { stdout, stderr } = await execAsync(cmd, { timeout: 15_000 });
   if (!stdout.trim()) return stderr || 'No results found.';
-  return truncate(stdout.trim());
+  try {
+    const data = JSON.parse(stdout);
+    const results = (data.web?.results || []).slice(0, 10);
+    if (results.length === 0) return 'No results found.';
+    return truncate(results.map((r: { title: string; url: string; description: string }, i: number) =>
+      `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description}`
+    ).join('\n\n'));
+  } catch {
+    return truncate(stdout.trim());
+  }
 }
 
 async function executeWebFetch(args: { url: string }): Promise<string> {
