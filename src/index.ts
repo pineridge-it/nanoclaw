@@ -8,6 +8,7 @@ import {
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
+  TELEGRAM_BOT_POOL,
   TELEGRAM_BOT_TOKEN,
   TELEGRAM_ONLY,
   TRIGGER_PATTERN,
@@ -428,10 +429,14 @@ async function main(): Promise<void> {
     await whatsapp.connect();
   }
 
+let telegramChannel: TelegramChannel | null = null;
   if (TELEGRAM_BOT_TOKEN) {
-    const telegram = new TelegramChannel(TELEGRAM_BOT_TOKEN, channelOpts);
-    channels.push(telegram);
-    await telegram.connect();
+    telegramChannel = new TelegramChannel(TELEGRAM_BOT_TOKEN, channelOpts);
+    channels.push(telegramChannel);
+    await telegramChannel.connect();
+    if (TELEGRAM_BOT_POOL.length > 0) {
+      await telegramChannel.initBotPool(TELEGRAM_BOT_POOL);
+    }
   }
 
   // Start subsystems (independently of connection handler)
@@ -453,6 +458,9 @@ async function main(): Promise<void> {
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
       return channel.sendMessage(jid, text);
     },
+    sendPoolMessage: telegramChannel
+      ? (jid, text, sender, groupFolder) => telegramChannel!.sendPoolMessage(jid, text, sender, groupFolder)
+      : undefined,
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroupMetadata: (force) => whatsapp?.syncGroupMetadata(force) ?? Promise.resolve(),

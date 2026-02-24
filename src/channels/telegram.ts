@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { logger } from '../logger.js';
@@ -21,6 +21,9 @@ export class TelegramChannel implements Channel {
   private bot: Bot | null = null;
   private opts: TelegramChannelOpts;
   private botToken: string;
+  private poolApis: Api[] = [];
+  private senderBotMap = new Map<string, number>();
+  private nextPoolIndex = 0;
 
   constructor(botToken: string, opts: TelegramChannelOpts) {
     this.botToken = botToken;
@@ -185,6 +188,68 @@ export class TelegramChannel implements Channel {
         },
       });
     });
+  }
+
+  async initBotPool(tokens: string[]): Promise<void> {
+    for (const token of tokens) {
+      try {
+        const api = new Api(token);
+        const me = await api.getMe();
+        this.poolApis.push(api);
+        logger.info(
+          { username: me.username, id: me.id, poolSize: this.poolApis.length },
+          'Pool bot initialized',
+        );
+      } catch (err) {
+        logger.error({ err }, 'Failed to initialize pool bot');
+      }
+    }
+    if (this.poolApis.length > 0) {
+      logger.info({ count: this.poolApis.length }, 'Telegram bot pool ready');
+    }
+  }
+
+  async sendPoolMessage(
+    jid: string,
+    text: string,
+    sender: string,
+    groupFolder: string,
+  ): Promise<void> {
+    if (this.poolApis.length === 0) {
+      await this.sendMessage(jid, text);
+      return;
+    }
+
+    const key = `${groupFolder}:${sender}`;
+    let idx = this.senderBotMap.get(key);
+    if (idx === undefined) {
+      idx = this.nextPoolIndex % this.poolApis.length;
+      this.nextPoolIndex++;
+      this.senderBotMap.set(key, idx);
+      try {
+        await this.poolApis[idx].setMyName(sender);
+        await new Promise((r) => setTimeout(r, 2000));
+        logger.info({ sender, groupFolder, poolIndex: idx }, 'Assigned and renamed pool bot');
+      } catch (err) {
+        logger.warn({ sender, err }, 'Failed to rename pool bot (sending anyway)');
+      }
+    }
+
+    const api = this.poolApis[idx];
+    try {
+      const numericId = jid.replace(/^tg:/, '');
+      const MAX_LENGTH = 4096;
+      if (text.length <= MAX_LENGTH) {
+        await api.sendMessage(numericId, text);
+      } else {
+        for (let i = 0; i < text.length; i += MAX_LENGTH) {
+          await api.sendMessage(numericId, text.slice(i, i + MAX_LENGTH));
+        }
+      }
+      logger.info({ chatId: jid, sender, poolIndex: idx, length: text.length }, 'Pool message sent');
+    } catch (err) {
+      logger.error({ chatId: jid, sender, err }, 'Failed to send pool message');
+    }
   }
 
   async sendMessage(jid: string, text: string): Promise<void> {
